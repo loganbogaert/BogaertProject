@@ -23,7 +23,7 @@ Name varchar(50) not null,
 Description text not null,
 Raffler int foreign key references Users(Id) not null,
 RafflePrice money not null,
-CurrentAmount money null
+CurrentAmount money default 0
 )
 ---------------<Create transaction table>--------------------------
 create table TransactionTable
