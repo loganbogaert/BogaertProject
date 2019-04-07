@@ -14,9 +14,10 @@ create table Users
 Id int not null primary key identity,
 Name varchar(50) not null, 
 Email varchar(80) not null, 
-Password varchar(50) not null
+Password varchar(50) not null, 
+Amount money, 
+check(Amount >=0)
 )
-
 ---------------<Create items table>--------------------------
 create table Items
 (
@@ -26,7 +27,7 @@ Description text not null,
 Raffler int foreign key references Users(Id) not null,
 RafflePrice money not null,
 CurrentAmount money default 0,
-check(RafflePrice > 0 and CurrentAmount > 0)
+check(RafflePrice > 0 and CurrentAmount >= 0)
 )
 ---------------<Create transaction table>--------------------------
 create table TransactionTable
@@ -36,6 +37,14 @@ ItemId int not null foreign key references Items(Id),
 Donor int not null foreign key references Users(Id),
 Amount money not null,
 unique(ItemId,Donor)
+)
+---------------<Create Winner table>--------------------------
+create table WinnerTable
+(
+Id int not null primary key identity, 
+ItemId int not null foreign key references Items(Id),
+Winner int not null foreign key references Users(Id),
+unique(ItemId,Winner)
 )
 -- next lot
 go
@@ -47,9 +56,39 @@ begin
 -- check if item exists 
 if not exists (select * from Items where Id = @itemId) return -1
 -- create table var 
-declare @myTable TABLE (id int, percentage float)
+declare @myTable TABLE (id int, Amount money)
 -- populate our table var 
-insert into @myTable select Donor, convert(float,(Amount / @rafflePrice) * 100) from TransactionTable where ItemId = @itemId
+insert into @myTable select Donor, Amount from TransactionTable where ItemId = @itemId
+---- create id Int 
+declare @id int 
+-- declare money var 
+declare @minValue money = 0.00
+-- create random to get a random winner 
+declare @random money = Round(RAND()*(@rafflePrice-0+1)+0,2)
+---- create cursors 
+declare db_cursor cursor local for select id from @myTable
+---- open cursor 
+open db_cursor  
+---- get first entry 
+fetch next from db_cursor into @id  
+---- loop trough cursor 
+while @@FETCH_STATUS = 0  
+---- begin while 
+begin 
+        -- get max value 
+        declare @maxValue money = (select Amount from @myTable where id = @id)
+		-- update max value 
+		set @maxValue = @minValue + @maxValue
+		-- check if he's a winner or not 
+		if @random >= @minValue and @random < @maxValue insert into WinnerTable values (@itemId,@id)
+		-- update value in table var 
+		update @myTable set Amount = @maxValue where id = @id
+		-- update min value 
+		set @minValue = @maxValue
+        -- get next entry 
+        fetch next from db_cursor into @id 
+---- end while 
+end
 -- end procedure 
 end 
 -- next lot
@@ -75,9 +114,13 @@ begin
     -- get current amount of product
     declare @currentAmount money = (select CurrentAmount from Items where Id = @itemId)
 	-- get raffleprice of product
-	declare @rafflePrice   money = (select RafflePrice from Items where Id = @itemId)
+	declare @rafflePrice money = (select RafflePrice from Items where Id = @itemId)
 	-- create new amount 
-	declare @newAmount     money = (select Amount from inserted where Id = @id)
+	declare @newAmount  money = (select Amount from inserted where Id = @id)
+	-- get donor 
+	declare @Donor money = (select Donor from inserted where Id = @id)
+	-- delete money from Account 
+	update Users set Amount = Amount - @newAmount where Id = @Donor
 	-- create updated amount 
 	declare @updatedAmount money set @updatedAmount = @newAmount + @currentAmount
 	-- check if we can update the current amount 
@@ -91,11 +134,18 @@ begin
 	-- begin end 
 	end 
 	-- check if we need to call a procecure to get random winner 
-	if @currentAmount = @rafflePrice exec dbo.ChoseRandomWinner
+	if @updatedAmount = @rafflePrice exec dbo.ChoseRandomWinner @itemId,@rafflePrice
 	-- get next entry 
     fetch next from db_cursor into @id 
 ---- end while 
 end 
 -- end trigger  
 end  
+-- next lot
+go
 -----------------------<Test values>-----------------------
+insert into Users values ('logan','bogaertlogan@gmail.com','test123',300.00), ('jarno','bogaertjarno@gmail.com','test123',300.00), ('Jeremy','bogaertjeremy@gmail.com','test123',300.00)
+insert into Items values ('Iphone','Never used Iphone',1,200.00,0)
+insert into TransactionTable values (1,2,120.00),(1,3,80.00)
+select * from Users
+
