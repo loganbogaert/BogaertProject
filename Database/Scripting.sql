@@ -45,8 +45,20 @@ create table WinnerTable
 Id int not null primary key identity, 
 ItemId int not null foreign key references Items(Id),
 Winner int not null foreign key references Users(Id),
-unique(ItemId,Winner)
+unique(ItemId)
 )
+---------------<Create Messages table>--------------------------
+create table Messages
+(
+Id int not null primary key identity, 
+Sender int not null foreign key references Users(Id),
+Receiver int not null foreign key references Users(Id),
+Message text not null
+)
+-- next lot
+go
+-------------------------------<View to get winner and donor at same record>-------------------------------
+create view MessageWinners as select W.Id, W.ItemId, W.Winner,I.Raffler from WinnerTable W join Items I on W.ItemId = I.Id
 -- next lot
 go
 ----------------------------<procedure to pick random winner>----------------------------
@@ -111,6 +123,42 @@ insert into TransactionTable values (@itemId,@userId,@amount) return 2
 end 
 -- next lot
 go
+---------------<trigger to check if user is allowed to send message to other user>----------
+create or alter trigger BeforeMessage on Messages instead of insert as 
+-- begin trigger 
+begin
+---- create id Int 
+declare @id int 
+---- create cursors 
+declare db_cursor cursor local for select id from inserted
+---- open cursor 
+open db_cursor  
+---- get first entry 
+fetch next from db_cursor into @id  
+---- loop trough cursor 
+while @@FETCH_STATUS = 0  
+---- begin while 
+begin 
+        -- sender var
+        declare @sender int = (select Sender  from inserted where Id = @id)
+		-- receiver var 
+		declare @receiver int = (select Receiver from inserted where Id = @id)
+		-- message var
+		declare @message varchar(max) = (select Message from inserted where Id = @id)
+		-- check if sender is not sending if message to himself
+		if @sender = @receiver raiserror('you can not send a message to yourself',16,1) 
+		-- insert if you're allowed to
+        if exists (select * from MessageWinners where (Raffler = @sender and Winner = @receiver) or (Raffler = @receiver and Winner = @sender)) insert into Messages values (@sender,@receiver,@message)
+		-- if not raise error
+		else raiserror('you are not allowed to send to that person',16,1) 
+        -- get next entry 
+        fetch next from db_cursor into @id 
+---- end while 
+end
+-- end trigger  
+end 
+-- next lot
+go
 ---------------<trigger before insert on transaction table>----------------------------
 create or alter trigger BeforeTransaction on TransactionTable after insert as 
 -- begin trigger
@@ -148,7 +196,7 @@ begin
 	-- begin else 
 	begin 
 	-- delete from transaction table 
-	delete from TransactionTable where Id = @id raiserror(10,10,1,'CurrentAmount cannot be bigger than RafflePrice') 
+	delete from TransactionTable where Id = @id raiserror('CurrentAmount cannot be bigger than RafflePrice',16,1) 
 	-- begin end 
 	end 
 	-- check if we need to call a procecure to get random winner 
@@ -165,8 +213,10 @@ go
 insert into Users values ('logan','bogaertlogan@gmail.com','test123',300.00,300.00), ('jarno','bogaertjarno@gmail.com','test123',300.00,300.00), ('Jeremy','bogaertjeremy@gmail.com','test123',300.00,300.00)
 insert into Items values ('Iphone','Never used Iphone',1,200.00,0)
 exec ModifyTransaction 1,2,110.00
-exec ModifyTransaction 1,3,80.00
-exec ModifyTransaction 1,3,10.00
-select * from TransactionTable
-select * from WinnerTable
+exec ModifyTransaction 1,3,90.00
 
+--select * from Messages
+select * from MessageWinners
+insert into Messages values (3,1,'lol')
+
+select * from Messages
