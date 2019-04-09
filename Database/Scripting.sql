@@ -15,8 +15,9 @@ Id int not null primary key identity,
 Name varchar(50) not null, 
 Email varchar(80) not null, 
 Password varchar(50) not null, 
-Amount money, 
-check(Amount >=0)
+Amount money not null,
+AvailableAmount money not null, 
+check(Amount >=0 and AvailableAmount >=0)
 )
 ---------------<Create items table>--------------------------
 create table Items
@@ -93,7 +94,24 @@ end
 end 
 -- next lot
 go
----------------<trigger before insert on transaction table>--------------------------
+-- next lot
+go
+---------------<procedure to add or update transaction table>--------------------------
+-- return 1 == updated
+-- return 2 == inserted
+create or alter procedure ModifyTransaction(@itemId int, @userId int, @amount money) as 
+-- begin procedure 
+begin
+-- check if exists 
+if exists (select * from TransactionTable where ItemId = @itemId and Donor = @userId) begin update TransactionTable set Amount = Amount + @amount where ItemId = @itemId and Donor = @userId return 1 end
+-- if not 
+insert into TransactionTable values (@itemId,@userId,@amount) return 2 
+
+-- end procedure 
+end 
+-- next lot
+go
+---------------<trigger before insert on transaction table>----------------------------
 create or alter trigger BeforeTransaction on TransactionTable after insert as 
 -- begin trigger
 begin
@@ -120,7 +138,7 @@ begin
 	-- get donor 
 	declare @Donor money = (select Donor from inserted where Id = @id)
 	-- delete money from Account 
-	update Users set Amount = Amount - @newAmount where Id = @Donor
+	update Users set AvailableAmount = AvailableAmount - @newAmount where Id = @Donor
 	-- create updated amount 
 	declare @updatedAmount money set @updatedAmount = @newAmount + @currentAmount
 	-- check if we can update the current amount 
@@ -144,8 +162,11 @@ end
 -- next lot
 go
 -----------------------<Test values>-----------------------
-insert into Users values ('logan','bogaertlogan@gmail.com','test123',300.00), ('jarno','bogaertjarno@gmail.com','test123',300.00), ('Jeremy','bogaertjeremy@gmail.com','test123',300.00)
+insert into Users values ('logan','bogaertlogan@gmail.com','test123',300.00,300.00), ('jarno','bogaertjarno@gmail.com','test123',300.00,300.00), ('Jeremy','bogaertjeremy@gmail.com','test123',300.00,300.00)
 insert into Items values ('Iphone','Never used Iphone',1,200.00,0)
-insert into TransactionTable values (1,2,120.00),(1,3,80.00)
-select * from Users
+exec ModifyTransaction 1,2,110.00
+exec ModifyTransaction 1,3,80.00
+exec ModifyTransaction 1,3,10.00
+select * from TransactionTable
+select * from WinnerTable
 
