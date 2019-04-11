@@ -37,7 +37,8 @@ Id int not null primary key identity,
 ItemId int not null foreign key references Items(Id),
 Donor int not null foreign key references Users(Id),
 Amount money not null,
-unique(ItemId,Donor)
+unique(ItemId,Donor), 
+check(Amount > 0)
 )
 ---------------<Create Winner table>--------------------------
 create table WinnerTable
@@ -66,6 +67,7 @@ go
 create or alter procedure ChoseRandomWinner(@itemId int,@rafflePrice float) as 
 -- begin procedure 
 begin
+print 'test'
 -- check if item exists 
 if not exists (select * from Items where Id = @itemId) return -1
 -- create table var 
@@ -106,8 +108,6 @@ end
 end 
 -- next lot
 go
--- next lot
-go
 ---------------<procedure to add or update transaction table>--------------------------
 -- return 1 == updated
 -- return 2 == inserted
@@ -118,7 +118,34 @@ begin
 if exists (select * from TransactionTable where ItemId = @itemId and Donor = @userId) begin update TransactionTable set Amount = Amount + @amount where ItemId = @itemId and Donor = @userId return 1 end
 -- if not 
 insert into TransactionTable values (@itemId,@userId,@amount) return 2 
-
+-- end procedure 
+end 
+-- next lot 
+go 
+----------------------<procedure used in trigger to check if amount is correct>----------------------
+create or alter procedure CheckAmount(@id int,@itemId int,@currentAmount money,@newAmount  money,@rafflePrice money,@Donor money, @uAmount money = 0) as 
+-- begin procedure
+begin
+    -- delete money from Account 
+	update Users set AvailableAmount = AvailableAmount - @newAmount where Id = @Donor
+	-- create updated amount 
+	declare @updatedAmount money 
+	-- normal update
+	if @uAmount = 0 set @updatedAmount = @newAmount + @currentAmount 
+	-- special update
+	else set @updatedAmount = @uAmount + @currentAmount
+	-- check if we can update the current amount 
+	if @updatedAmount <= @rafflePrice update Items set CurrentAmount = @updatedAmount where Id = @itemId 
+	-- if we can't, raise error and delete transaction record
+	else 
+	-- begin else 
+	begin 
+	-- delete from transaction table 
+	delete from TransactionTable where Id = @id raiserror('CurrentAmount cannot be bigger than RafflePrice',16,1) 
+	-- begin end 
+	end 
+	-- check if we need to call a procecure to get random winner 
+	if @updatedAmount = @rafflePrice exec dbo.ChoseRandomWinner @itemId,@rafflePrice
 -- end procedure 
 end 
 -- next lot
@@ -159,8 +186,8 @@ end
 end 
 -- next lot
 go
----------------<trigger before insert on transaction table>----------------------------
-create or alter trigger BeforeTransaction on TransactionTable after insert as 
+---------------<trigger after insert on transaction table>----------------------------
+create or alter trigger BeforeTransactionI on TransactionTable after insert as 
 -- begin trigger
 begin
 ---- create id Int 
@@ -185,22 +212,48 @@ begin
 	declare @newAmount  money = (select Amount from inserted where Id = @id)
 	-- get donor 
 	declare @Donor money = (select Donor from inserted where Id = @id)
-	-- delete money from Account 
-	update Users set AvailableAmount = AvailableAmount - @newAmount where Id = @Donor
-	-- create updated amount 
-	declare @updatedAmount money set @updatedAmount = @newAmount + @currentAmount
-	-- check if we can update the current amount 
-	if @updatedAmount <= @rafflePrice update Items set CurrentAmount = @updatedAmount where Id = @itemId 
-	-- if we can't, raise error and delete transaction record
-	else 
-	-- begin else 
-	begin 
-	-- delete from transaction table 
-	delete from TransactionTable where Id = @id raiserror('CurrentAmount cannot be bigger than RafflePrice',16,1) 
-	-- begin end 
-	end 
-	-- check if we need to call a procecure to get random winner 
-	if @updatedAmount = @rafflePrice exec dbo.ChoseRandomWinner @itemId,@rafflePrice
+	-- use procedure 
+	exec CheckAmount @id, @itemId, @currentAmount,@newAmount,@rafflePrice,@Donor
+	-- get next entry 
+    fetch next from db_cursor into @id 
+---- end while 
+end 
+-- end trigger  
+end  
+-- next lot
+go
+---------------<trigger after insert on transaction table>----------------------------
+create or alter trigger BeforeTransactionU on TransactionTable after update as 
+-- begin trigger
+begin
+---- create id Int 
+declare @id int 
+---- create cursors 
+declare db_cursor cursor local for select Id from inserted
+---- open cursor 
+open db_cursor  
+---- get first entry 
+fetch next from db_cursor into @id  
+---- loop trough cursor 
+while @@FETCH_STATUS = 0  
+---- begin while 
+begin 
+    -- get itemiD 
+	declare @itemId int = (select ItemId from inserted where Id = @id)
+    -- get current amount of product
+    declare @currentAmount money = (select CurrentAmount from Items where Id = @itemId)
+	-- get raffleprice of product
+	declare @rafflePrice money = (select RafflePrice from Items where Id = @itemId)
+    -- old amount 
+	declare @oldAmount money = (select Amount from deleted where Id = @id)
+	-- create new amount 
+	declare @newAmount  money = (select Amount from inserted where Id = @id)
+	-- calculate updated amount
+	declare @calculation money = @newAmount - @oldAmount
+	-- get donor 
+	declare @Donor money = (select Donor from inserted where Id = @id)
+	-- use procedure 
+	exec CheckAmount @id, @itemId, @currentAmount,@newAmount,@rafflePrice,@Donor, @calculation
 	-- get next entry 
     fetch next from db_cursor into @id 
 ---- end while 
@@ -213,10 +266,10 @@ go
 insert into Users values ('logan','bogaertlogan@gmail.com','test123',300.00,300.00), ('jarno','bogaertjarno@gmail.com','test123',300.00,300.00), ('Jeremy','bogaertjeremy@gmail.com','test123',300.00,300.00)
 insert into Items values ('Iphone','Never used Iphone',1,200.00,0)
 exec ModifyTransaction 1,2,110.00
-exec ModifyTransaction 1,3,90.00
-
+exec ModifyTransaction 1,3,80.00
+exec ModifyTransaction 1,3,-10.00
+exec ModifyTransaction 1,3,20.00
 --select * from Messages
+select * from TransactionTable
 select * from MessageWinners
-insert into Messages values (3,1,'lol')
 
-select * from Messages
