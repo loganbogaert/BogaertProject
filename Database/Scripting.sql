@@ -13,11 +13,12 @@ create table Users
 (
 Id int not null primary key identity,
 Name varchar(50) not null, 
-Email varchar(80) not null, 
+Email varchar(80) not null unique, 
 Password varchar(50) not null, 
 Amount money not null,
 AvailableAmount money not null, 
-check(Amount >=0 and AvailableAmount >=0)
+check(Amount >=0 and AvailableAmount >=0),
+check(Amount >= AvailableAmount)
 )
 ---------------<Create items table>--------------------------
 create table Items
@@ -60,6 +61,69 @@ Message text not null
 go
 -------------------------------<View to get winner and donor at same record>-------------------------------
 create view MessageWinners as select W.Id, W.ItemId, W.Winner,I.Raffler from WinnerTable W join Items I on W.ItemId = I.Id
+-- next lot
+go
+-------------------------------<procedure to send money after item has been won>-------------------------------
+-- return -1 == item does not exists
+create or alter procedure ConfirmPayment(@itemId int) as 
+-- begin procedure
+begin
+-- check if item exists 
+if not exists (select * from Items where Id = @itemId) return -1
+-- get total of sum from payments 
+declare @totalSum  money = (select sum(Amount) from TransactionTable where ItemId = @itemId)
+-- get rafflePrice from item
+declare @totalItem money = (select RafflePrice from Items where Id = @itemId)
+-- check if total equals amount of item
+if @totalItem = @totalSum 
+-- begin if
+begin
+        -- begin try block
+        begin try
+		   -- begin transaction block 
+		   begin transaction
+		   ---- create id Int 
+           declare @id int 
+		   ---- create cursors 
+           declare db_cursor cursor local for select id from TransactionTable where ItemId = @itemId
+		   ---- open cursor 
+           open db_cursor  
+		   ---- get first entry 
+           fetch next from db_cursor into @id  
+           ---- loop trough cursor 
+           while @@FETCH_STATUS = 0  
+		   ---- begin while 
+           begin 
+		   -- get amount 
+		   declare @amount money = (select Amount from TransactionTable where Id =@id)
+		   -- get donor 
+		   declare  @donor int = (select Donor from TransactionTable where Id = @id)
+		   -- update users table 
+		   update Users set Amount = Amount - @amount where Id =  @donor
+		   -- get next entry 
+           fetch next from db_cursor into @id 
+		   ---- end while 
+           end
+		   -------------------<To be continued>-------------------
+		   -- get raffler 
+		   declare @raffler int = (select Raffler from Items where Id = @itemId)
+		   -- update saldo amount 
+		   update Users set Amount = Amount + @totalSum, AvailableAmount = AvailableAmount + @totalSum where Id = @raffler
+		   -- commit sql 
+		   commit 
+	    -- end try block 
+	    end try 
+		-- rollback
+		begin catch rollback 
+		--raiserror('Error while throwing money away from userAccounts, very weird error !',16,1)   
+		end catch
+-- end if 
+end 
+
+-- raise weird error
+else raiserror('Total of payments should be equal to itemRafflePrice, very weird error !',16,1) 
+-- end procedure 
+end 
 -- next lot
 go
 ----------------------------<procedure to pick random winner>----------------------------
@@ -126,14 +190,12 @@ go
 create or alter procedure CheckAmount(@id int,@itemId int,@currentAmount money,@newAmount  money,@rafflePrice money,@Donor money, @uAmount money = 0) as 
 -- begin procedure
 begin
-    -- delete money from Account 
-	update Users set AvailableAmount = AvailableAmount - @newAmount where Id = @Donor
 	-- create updated amount 
 	declare @updatedAmount money 
 	-- normal update
-	if @uAmount = 0 set @updatedAmount = @newAmount + @currentAmount 
+	if @uAmount = 0 begin set @updatedAmount = @newAmount + @currentAmount  update Users set AvailableAmount = AvailableAmount - @newAmount where Id = @Donor end
 	-- special update
-	else set @updatedAmount = @uAmount + @currentAmount
+	else begin set @updatedAmount = @uAmount + @currentAmount update Users set AvailableAmount = AvailableAmount - @uAmount where Id = @Donor  end 
 	-- check if we can update the current amount 
 	if @updatedAmount <= @rafflePrice update Items set CurrentAmount = @updatedAmount where Id = @itemId 
 	-- if we can't, raise error and delete transaction record
@@ -269,6 +331,8 @@ exec ModifyTransaction 1,2,110.00
 exec ModifyTransaction 1,3,80.00
 exec ModifyTransaction 1,3,-10.00
 exec ModifyTransaction 1,3,20.00
+exec ConfirmPayment 1
+select * from Users
 --select * from Messages
 select * from TransactionTable
 select * from MessageWinners
