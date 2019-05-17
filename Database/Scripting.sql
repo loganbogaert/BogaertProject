@@ -8,15 +8,28 @@ if DB_ID('TombolaDB') is not null drop database TombolaDB
 if DB_ID('TombolaDB') is null create database TombolaDB
 ---------------<start using principal database>-------------
 use TombolaDB
----------------<Create user table>--------------------------
-create table Users 
+---------------<Create app User table>----------------------
+create table AppConnections
 (
 Id int not null primary key identity,
 Name varchar(50) not null, 
 Email varchar(80) not null unique, 
-Password varchar(50) not null, 
+Password varchar(50) not null
+)
+---------------<Create app FaceBook table>----------------------
+create table FaceBookConnections
+(
+Id int not null unique,
+AccessToken varchar(max) not null
+)
+---------------<Create user table>--------------------------
+create table Users 
+(
+Id int not null primary key identity,
 Amount money not null,
 AvailableAmount money not null, 
+IdAppUserConnection int null foreign key references AppConnections(Id), 
+IdFaceBookUserConnection int null foreign key references FaceBookConnections(Id),
 check(Amount >=0 and AvailableAmount >=0),
 check(Amount >= AvailableAmount)
 )
@@ -57,6 +70,14 @@ Sender int not null foreign key references Users(Id),
 Receiver int not null foreign key references Users(Id),
 Message text not null
 )
+-- next lot 
+go 
+-------------------------------<View to get facebook users>-------------------------------
+create view FacebookUsers as select u.Id, u.Amount, u.AvailableAmount, f.AccessToken from  Users u join FaceBookConnections f on f.Id = u.IdFaceBookUserConnection 
+-- next lot 
+go 
+-------------------------------<View to get facebook users>-------------------------------
+create view AppUsers as select u.Id, u.Amount, u.AvailableAmount, a.Name, a.Email, a.Password from  Users u join AppConnections a on a.Id = u.IdAppUserConnection
 -- next lot
 go
 -------------------------------<View to get winner and donor at same record>-------------------------------
@@ -119,7 +140,6 @@ begin
 		end catch
 -- end if 
 end 
-
 -- raise weird error
 else raiserror('Total of payments should be equal to itemRafflePrice, very weird error !',16,1) 
 -- end procedure 
@@ -131,7 +151,6 @@ go
 create or alter procedure ChoseRandomWinner(@itemId int,@rafflePrice float) as 
 -- begin procedure 
 begin
-print 'test'
 -- check if item exists 
 if not exists (select * from Items where Id = @itemId) return -1
 -- create table var 
@@ -248,6 +267,42 @@ end
 end 
 -- next lot
 go
+---------------<trigger after insert on Users table>----------------------------
+create or alter trigger AfterUser on Users after insert as 
+-- begin trigger 
+begin
+---- create id Int 
+declare @id int 
+---- create cursors 
+declare db_cursor cursor local for select Id from inserted
+---- open cursor 
+open db_cursor  
+---- get first entry 
+fetch next from db_cursor into @id  
+---- loop trough cursor 
+while @@FETCH_STATUS = 0  
+---- begin while 
+begin 
+     -- get IdAppUserConnection
+	 declare @idAppUser int = (select IdAppUserConnection from inserted where Id = @id)
+	 -- get IdFaceBookUserConnection
+	 declare @idFaceBook int = (select IdFaceBookUserConnection from inserted where Id = @id)
+	 -- violation check 
+	 if @idAppUser is null and @idFaceBook is null
+	 -- give error and delete user 
+	 begin delete from Users where Id = @id raiserror('User has to be app or facebook user',16,1) end
+	 -- violation check 
+	 if @idAppUser is not null and @idFaceBook is not null
+	 -- give error and delete user 
+	 begin delete from Users where Id = @id raiserror('User can not be an AppUser and a Facebook user at the same time',16,1) end
+	 -- get next entry 
+    fetch next from db_cursor into @id 
+---- end while 
+end
+-- end trigger
+end
+-- next lot
+go
 ---------------<trigger after insert on transaction table>----------------------------
 create or alter trigger BeforeTransactionI on TransactionTable after insert as 
 -- begin trigger
@@ -325,15 +380,19 @@ end
 -- next lot
 go
 -----------------------<Test values>-----------------------
-insert into Users values ('logan','bogaertlogan@gmail.com','test123',300.00,300.00), ('jarno','bogaertjarno@gmail.com','test123',300.00,300.00), ('Jeremy','bogaertjeremy@gmail.com','test123',300.00,300.00)
+insert into AppConnections values('logan','bogaertlogan@gmail.com','test123')
+insert into AppConnections values('jarno','bogaertjarno@gmail.com','test123')
+insert into AppConnections values('Jeremy','bogaertjeremy@gmail.com','test123')
+insert into Users values (300.00,300.00,1,null), (300.00,300.00,2,null), (300.00,300.00,3,null)
 insert into Items values ('Iphone','Never used Iphone',1,200.00,0)
 exec ModifyTransaction 1,2,110.00
 exec ModifyTransaction 1,3,80.00
 exec ModifyTransaction 1,3,-10.00
 exec ModifyTransaction 1,3,20.00
 exec ConfirmPayment 1
-select * from Users
+select * from AppUsers
 --select * from Messages
-select * from TransactionTable
-select * from MessageWinners
-
+--select * from TransactionTable
+--select * from MessageWinners
+-- next lot
+go
