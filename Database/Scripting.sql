@@ -76,7 +76,7 @@ go
 create view FacebookUsers as select u.Id, u.Amount, u.AvailableAmount, f.AccessToken from  Users u join FaceBookConnections f on f.Id = u.IdFaceBookUserConnection 
 -- next lot 
 go 
--------------------------------<View to get facebook users>-------------------------------
+-------------------------------<View to get real app users>-------------------------------
 create view AppUsers as select u.Id, u.Amount, u.AvailableAmount, a.Name, a.Email, a.Password from  Users u join AppConnections a on a.Id = u.IdAppUserConnection
 -- next lot
 go
