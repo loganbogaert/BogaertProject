@@ -14,20 +14,22 @@ create table AppConnections
 Id int not null primary key identity,
 Name varchar(50) not null, 
 Email varchar(80) not null unique, 
-Password varchar(50) not null
+Password varchar(50) not null,
+AccessToken varchar(max) not null,
 )
 ---------------<Create app FaceBook table>----------------------
 create table FaceBookConnections
 (
-Id int not null unique,
+Id int not null primary key identity,
+FbId varchar(max) not null,
 AccessToken varchar(max) not null
 )
 ---------------<Create user table>--------------------------
 create table Users 
 (
 Id int not null primary key identity,
-Amount money not null,
-AvailableAmount money not null, 
+Amount money not null default 0,
+AvailableAmount money not null default 0, 
 IdAppUserConnection int null foreign key references AppConnections(Id), 
 IdFaceBookUserConnection int null foreign key references FaceBookConnections(Id),
 check(Amount >=0 and AvailableAmount >=0),
@@ -77,7 +79,7 @@ create view FacebookUsers as select u.Id, u.Amount, u.AvailableAmount, f.AccessT
 -- next lot 
 go 
 -------------------------------<View to get real app users>-------------------------------
-create view AppUsers as select u.Id, u.Amount, u.AvailableAmount, a.Name, a.Email, a.Password from  Users u join AppConnections a on a.Id = u.IdAppUserConnection
+create view AppUsers as select u.Id, u.Amount, u.AvailableAmount, a.Name, a.Email, a.Password, a.AccessToken from  Users u join AppConnections a on a.Id = u.IdAppUserConnection
 -- next lot
 go
 -------------------------------<View to get winner and donor at same record>-------------------------------
@@ -99,8 +101,8 @@ declare @totalItem money = (select RafflePrice from Items where Id = @itemId)
 if @totalItem = @totalSum 
 -- begin if
 begin
-        -- begin try block
-        begin try
+           -- begin try block
+           begin try
 		   -- begin transaction block 
 		   begin transaction
 		   ---- create id Int 
@@ -132,17 +134,59 @@ begin
 		   update Users set Amount = Amount + @totalSum, AvailableAmount = AvailableAmount + @totalSum where Id = @raffler
 		   -- commit sql 
 		   commit 
-	    -- end try block 
-	    end try 
-		-- rollback
-		begin catch rollback 
-		--raiserror('Error while throwing money away from userAccounts, very weird error !',16,1)   
-		end catch
+	       -- end try block 
+	       end try 
+		   -- rollback
+		   begin catch rollback  raiserror('Error while throwing money away from userAccounts, very weird error !',16,1)   end catch
 -- end if 
 end 
 -- raise weird error
 else raiserror('Total of payments should be equal to itemRafflePrice, very weird error !',16,1) 
 -- end procedure 
+end 
+-- next lot
+go
+----------------------------<procedure to add a user in system>--------------------------
+-- return  0 == user correctly created  
+-- return -1 == not a correct UserType 
+-- return -2 == user chose for app user and didn't give username, password, email
+-- return -4 == facebookId is null and shouldn't be null
+create or alter procedure AddUser(@AccessToken varchar(max), @UserType char, @Username varchar(50) = null, @Email varchar(80) = null, @Password varchar(50) = null, @FacebookId varchar(max) = null) as
+-- begin procedure 
+begin
+-- check for UserType 
+if @UserType != 'f' and @UserType != 'a' return -1 
+-- if app user
+if @UserType = 'a' 
+-- begin if
+begin 
+     -- check if credentials are correct 
+     if @Username is null or @Email is null or @Password is null return -2 
+	 -- if not insert into appUsers 
+	 else insert into AppConnections values (@Username, @Email, @Password, @AccessToken)
+	 -- then create user 
+	 insert into Users values (0,0,SCOPE_IDENTITY(),null)
+	 -- return good signal
+	 return 0
+-- end if    
+end 
+-- else
+else 
+-- check if FacebookId is null 
+if @FacebookId is null return -4 
+-- else 
+else
+-- begin else  
+begin 
+    -- insert into facebook users
+    insert into FaceBookConnections values (@FacebookId, @AccessToken)
+	-- then create user 
+	insert into Users values (0,0,null,SCOPE_IDENTITY())
+	-- return good signal
+	return 0
+-- end else 
+end 
+-- end procedure  
 end 
 -- next lot
 go
@@ -380,9 +424,11 @@ end
 -- next lot
 go
 -----------------------<Test values>-----------------------
-insert into AppConnections values('logan','bogaertlogan@gmail.com','test123')
-insert into AppConnections values('jarno','bogaertjarno@gmail.com','test123')
-insert into AppConnections values('Jeremy','bogaertjeremy@gmail.com','test123')
+exec AddUser 'AERZO', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
+select * from AppUsers
+/*insert into AppConnections values('logan','bogaertlogan@gmail.com','test123','test')
+insert into AppConnections values('jarno','bogaertjarno@gmail.com','test123','test')
+insert into AppConnections values('Jeremy','bogaertjeremy@gmail.com','test123','test')
 insert into Users values (300.00,300.00,1,null), (300.00,300.00,2,null), (300.00,300.00,3,null)
 insert into Items values ('Iphone','Never used Iphone',1,200.00,0)
 exec ModifyTransaction 1,2,110.00
@@ -394,5 +440,6 @@ select * from AppUsers
 --select * from Messages
 --select * from TransactionTable
 --select * from MessageWinners
+*/
 -- next lot
 go
