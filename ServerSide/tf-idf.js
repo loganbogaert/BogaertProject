@@ -1,11 +1,11 @@
 //*****************************<vars>*****************************
-var data = [{"output" : "say hello", "sentence" : "Hello how are you doing"}, {"output" : "say hello", "sentence" : "Hello how are you feeling today"}];
-var singleObjects;
+var data = [{"output" : "say hello", "sentence" : "the best the best american restaurant"}, {"output" : "say hello", "sentence" : "american restaurant enjoy the best hamburger"},{"output" : "say hello", "sentence" : "korean restaurant enjoy the best bibimbap"},{"output" : "say hello", "sentence" : "the best italian restaurant enjoy the best pasta"} ];
+var response;
 //****************************<function>***************************
 function getEveryWordOnce(splitter,data) 
 {
     // create array
-    var singleWords = []; var singleObjects = []
+    var singleWords = []; var singleObjects = [];
     // loop through data
     for(i=0;i<data.length;i++)
     {
@@ -15,13 +15,7 @@ function getEveryWordOnce(splitter,data)
         for(b=0;b<sentenceInArray.length;b++)
         { 
             // add intp array
-            if(!singleWords.includes(sentenceInArray[b])) 
-            { 
-                // create multiarray
-                var array = []; 
-                // add to arrays
-                singleObjects.push({"word" : sentenceInArray[b], "tf" : array, "idf" : ""}); singleWords.push(sentenceInArray[b]);
-            }
+            if(!singleWords.includes(sentenceInArray[b])) { singleObjects.push({"word" : sentenceInArray[b], "tf" : [], "idf" : "", "tfIdf" : []}); singleWords.push(sentenceInArray[b]);}
         }
     }
     // return array 
@@ -43,7 +37,7 @@ function calculateTermFrequency(singleObjects,data)
             // aantal ++ if needed
             for(c=0;c<array.length;c++) {if(array[c] == singleObjects[i].word) aantal++;}
             // push into array 
-            singleObjects[i].tf.push((aantal/array.length).toFixed(2));
+            singleObjects[i].tf.push((aantal/array.length).toFixed(3));
         }
     }
     // return object 
@@ -66,10 +60,50 @@ function calculateInverseDocumentFrequency(data,singleObjects)
             for(c=0;c<array.length;c++) {if(singleObjects[i].word == array[c]) {aantal++; break;}}
         }
         // idf calculation
-        singleObjects[i].idf =  Math.log(data.length / aantal).toFixed(2);
+        singleObjects[i].idf =  Math.log(data.length / aantal).toFixed(3);
     }
     // return object
     return singleObjects;
+}
+//*****************************<function>*****************************
+function calculatetfIdf(singleObjects)
+{
+    // loop trough objects 
+    for(i=0;i<singleObjects.length;i++){ for(b=0;b<singleObjects[i].tf.length;b++){ singleObjects[i].tfIdf.push((singleObjects[i].tf[b] * singleObjects[i].idf).toFixed(3))} delete singleObjects[i].tf; delete singleObjects[i].idf;}
+    // return object
+    return singleObjects;
+}
+//*****************************<function>*****************************
+function calculateSimilarity(singleObjects, length, data)
+{
+    // create array for the first sentence and var
+    var nlpArray = [];  var aantal = 1;
+    // loop trough array 
+    for(i=0;i<singleObjects.length;i++){nlpArray.push(singleObjects[i].tfIdf[0]);}
+    // throw error if length equals 1 
+    if(length <=1) throw "length should be bigger than 1";
+    // create vars
+    var index,max;
+    // give values
+    index = -1; max = -1;
+    // loop trough
+    while(aantal < length)
+    {
+        // create array
+        var compareArray = [];
+        // loop trough array 
+        for(i=0;i<singleObjects.length;i++) { compareArray.push(singleObjects[i].tfIdf[aantal]);}
+        // get library 
+        var similarity = require('compute-cosine-similarity');
+        // get similarity
+        var sim = similarity(nlpArray,compareArray).toFixed(3);
+        // max check
+        if(max < sim) {max = sim; index = aantal;}
+        // ++
+        aantal++;
+    }
+    // return object 
+    return data[index];
 }
 //*****************************<Use functions>*****************************/
 function tfIdf(data)
@@ -80,15 +114,11 @@ function tfIdf(data)
     singleObjects = calculateTermFrequency(singleObjects,data);
     // call method 
     singleObjects = calculateInverseDocumentFrequency(data,singleObjects);
-    // return array
-    return singleObjects;
+    // call method
+    singleObjects = calculatetfIdf(singleObjects);
+    // call method 
+    return calculateSimilarity(singleObjects, data.length,data);
 }
 // call method
-singleObjects = tfIdf(data);
-console.log(singleObjects);
-
-
-
-
-
-
+response = tfIdf(data);
+console.log(response);
