@@ -81,6 +81,10 @@ Text text not null
 )
 -- next lot 
 go 
+-------------------------------<View to get number of text per language>------------------
+create view TextPerLanguage as select Language, Text, ROW_NUMBER() over( partition by Language Order by Language) as LanguageNumber from Texts 
+-- next lot 
+go 
 -------------------------------<View to get facebook users>-------------------------------
 create view FacebookUsers as select u.Id, u.Amount, u.AvailableAmount, f.AccessToken from  Users u join FaceBookConnections f on f.Id = u.IdFaceBookUserConnection 
 -- next lot 
@@ -435,9 +439,9 @@ go
 -----------------------<Test values>-----------------------
 exec AddUser 'AERZO', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
 
-insert into Texts values ('NL', 'lol')
+insert into Texts values ('NL', 'lol'), ('FR','lel'), ('FR','bonjour'), ('NL','hallo')
 
-select * from Texts
+select * from TextPerLanguage
 --select * from AppUsers
 /*insert into AppConnections values('logan','bogaertlogan@gmail.com','test123','test')
 insert into AppConnections values('jarno','bogaertjarno@gmail.com','test123','test')
