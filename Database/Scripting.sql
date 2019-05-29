@@ -72,6 +72,13 @@ Sender int not null foreign key references Users(Id),
 Receiver int not null foreign key references Users(Id),
 Message text not null
 )
+-------------<table for texts>-------------
+create table Texts
+(
+Id int not null primary key identity, 
+Language varchar(2) not null, 
+Text text not null
+)
 -- next lot 
 go 
 -------------------------------<View to get facebook users>-------------------------------
@@ -275,6 +282,8 @@ begin
 end 
 -- next lot
 go
+-- next lot
+go
 ---------------<trigger to check if user is allowed to send message to other user>----------
 create or alter trigger BeforeMessage on Messages instead of insert as 
 -- begin trigger 
@@ -425,7 +434,11 @@ end
 go
 -----------------------<Test values>-----------------------
 exec AddUser 'AERZO', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
-select * from AppUsers
+
+insert into Texts values ('NL', 'lol')
+
+select * from Texts
+--select * from AppUsers
 /*insert into AppConnections values('logan','bogaertlogan@gmail.com','test123','test')
 insert into AppConnections values('jarno','bogaertjarno@gmail.com','test123','test')
 insert into AppConnections values('Jeremy','bogaertjeremy@gmail.com','test123','test')
