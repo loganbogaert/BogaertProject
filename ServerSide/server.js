@@ -12,6 +12,7 @@ io.on('connection', (socket) => {
             callback(false);
             console.log('username already taken');
         }
+        // If username is not taken
         else {
             callback(true);
             socket.username = username;
@@ -20,6 +21,7 @@ io.on('connection', (socket) => {
         }
     })
 
+    // Listen to when a message is sent
     socket.on('send-message', (data, callback) => {
         // Send to receiver
         users[data.to].emit('new-message', {msg: data.msg, username: socket.username});
@@ -28,7 +30,6 @@ io.on('connection', (socket) => {
     });
 
 });
-
 
 function updateUsernames() {
     io.emit('usernames', Object.keys(users));

@@ -4,6 +4,7 @@ let joinBtn = $('#joinBtn');
 let joinForm = $('#join-form');
 let friendsDiv = $('#friends');
 
+// Click event to join
 joinBtn.click((e) => {
     e.preventDefault();
     let name = $('#username').val();
@@ -20,6 +21,7 @@ joinBtn.click((e) => {
     });
 });
 
+// Click event to go to private chat
 $(document).on('click', '.single-friend', (e) => {
     console.log('send prive msg to ' + e.target.id + ' ...');
     sessionStorage.setItem('to', e.target.id);
@@ -28,6 +30,7 @@ $(document).on('click', '.single-friend', (e) => {
     $('#active-to').html(e.target.id);
 });
 
+// Click event to send message
 $(document).on('click', '#send-msg', (e) => {
     e.preventDefault();
     let msg = $('#msg').val();
@@ -38,7 +41,7 @@ $(document).on('click', '#send-msg', (e) => {
 });
 
 
-
+// Listen to update usernames
 socket.on('usernames', (data) => {
     console.log(data);
     $('#list').html('');
@@ -52,6 +55,7 @@ socket.on('usernames', (data) => {
     }
 })
 
+// Listen if there is any new message
 socket.on('new-message', (data) => {
     let tempName = sessionStorage.getItem('name');
     console.log(tempName);
