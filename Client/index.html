@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <form id="join-form">
+            <div class="form-group center">
+                <label for="username">Username</label>
+                <input type="email" class="form-control" id="username"
+                    placeholder="Enter username">
+            </div>
+            <button id="joinBtn" class="btn btn-primary">Join</button>
+        </form>
+
+        <div id="friends">
+            <h3 class="mt-3">Friends online</h3>
+            <hr>
+            <ul id="list"></ul>
+        </div>
+
+        <div id="private-msg">
+            <div id="header">
+                <h4 id="active-to" class="mt-3"></h4>
+                <hr>
+            </div>
+            <ul id="msg-items"></ul>
+            <form action="" id="msg-form">
+                <input type="text" class="form-control" id="msg"
+                    placeholder="Enter message">
+                    <button id="send-msg">Send</button>
+            </form>
+        </div>
+
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.js"></script>
+    <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+    <script src="js/script.js"></script>
+</body>
+
+</html>

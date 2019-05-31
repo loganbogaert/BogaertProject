@@ -1,0 +1,10 @@
+{
+  "name": "chat-app",
+  "version": "1.0.0",
+  "main": "server.js",
+  "author": "Jarno Bogaert",
+  "license": "MIT",
+  "dependencies": {
+    "socket.io": "^2.2.0"
+  }
+}

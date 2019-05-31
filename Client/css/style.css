@@ -1,0 +1,67 @@
+#join-form {
+    top: 50%;
+    left: 50%;
+    position: absolute;
+    transform: translate(-50%, -50%);
+    /* display: none; */
+}
+
+#friends {
+    display: none;
+}
+
+ul {
+    padding: 0;
+    margin: 0;
+}
+
+li {
+    list-style: none;
+    border-bottom: 1px solid #eee;
+    padding: 1em;
+}
+
+li.single-friend:hover {
+    cursor: pointer;
+}
+
+#header {
+    /* position: fixed; */
+}
+
+#private-msg {
+    display: none;
+}
+
+#msg-form {
+    bottom: 0;
+    left: 0;
+    position: fixed;
+    width: 100%;
+}
+
+#msg {
+    border-left: none;
+    border-right: none;
+    padding: 1em;
+}
+
+#msg:focus {
+    box-shadow: none;
+    border-color: #ced4da;
+}
+
+#active-to {
+    text-align: center;
+}
+
+#send-msg {
+    position: absolute;
+    right: 0;
+    z-index: 1;
+    bottom: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 100%;
+    border: none;
+}
