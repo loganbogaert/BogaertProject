@@ -5,6 +5,7 @@
   "author": "Jarno Bogaert",
   "license": "MIT",
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "socket.io": "^2.2.0"
   }
 }
