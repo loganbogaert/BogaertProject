@@ -15,14 +15,14 @@ Id int not null primary key identity,
 Name varchar(50) not null, 
 Email varchar(80) not null unique, 
 Password varchar(50) not null,
-AccessToken varchar(max) not null,
+AccessToken varchar(300) not null unique,
 )
 ---------------<Create app FaceBook table>----------------------
 create table FaceBookConnections
 (
 Id int not null primary key identity,
 FbId varchar(max) not null,
-AccessToken varchar(max) not null
+AccessToken varchar(300) not null unique
 )
 ---------------<Create user table>--------------------------
 create table Users 
@@ -175,8 +175,6 @@ begin
      if @Username is null or @Email is null or @Password is null return -2 
 	 -- if not insert into appUsers 
 	 else insert into AppConnections values (@Username, @Email, @Password, @AccessToken)
-	 -- then create user 
-	 insert into Users values (0,0,SCOPE_IDENTITY(),null)
 	 -- return good signal
 	 return 0
 -- end if    
@@ -433,30 +431,53 @@ begin
 ---- end while 
 end 
 -- end trigger  
-end  
+end 
+-- next lot
+go 
+---------------<trigger before insert on transaction table>----------------------------
+create or alter trigger beforeAppConnection on AppConnections instead of insert as 
+-- begin trigger
+begin
+---- create id Int 
+declare @id int 
+---- create cursors 
+declare db_cursor cursor local for select Id from inserted
+---- open cursor 
+open db_cursor  
+---- get first entry 
+fetch next from db_cursor into @id  
+---- loop trough cursor 
+while @@FETCH_STATUS = 0  
+---- begin while 
+begin  
+	-- get name 
+	declare @name varchar(50) = (select replace(lower(Name), ' ', '') from inserted where Id = @id)
+	-- get email
+	declare @email varchar(80) = (select replace(lower(Email), ' ', '') from inserted where Id = @id)
+	-- get password
+	declare @password varchar(50) = (select lower(Password) from inserted where Id = @id)
+	-- get access token
+	declare @accessToken varchar(300) = (select AccessToken from inserted where Id = @id)
+	-- insert into table 
+	insert into AppConnections values (@name, @email, @password, @accessToken)
+	-- then create user 
+	insert into Users values (0,0,SCOPE_IDENTITY(),null)
+	-- get next entry 
+    fetch next from db_cursor into @id
+---- end while 
+end 
+-- end trigger  
+end 
 -- next lot
 go
 -----------------------<Test values>-----------------------
-exec AddUser 'AERZO', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
+exec AddUser 'AERZO', 'a', 'Log an', 'bogaertlogan@gmail.com', 'test123', null 
 
 insert into Texts values ('NL', 'lol'), ('FR','lel'), ('FR','bonjour'), ('NL','hallo')
 
-select * from TextPerLanguage
---select * from AppUsers
-/*insert into AppConnections values('logan','bogaertlogan@gmail.com','test123','test')
-insert into AppConnections values('jarno','bogaertjarno@gmail.com','test123','test')
-insert into AppConnections values('Jeremy','bogaertjeremy@gmail.com','test123','test')
-insert into Users values (300.00,300.00,1,null), (300.00,300.00,2,null), (300.00,300.00,3,null)
-insert into Items values ('Iphone','Never used Iphone',1,200.00,0)
-exec ModifyTransaction 1,2,110.00
-exec ModifyTransaction 1,3,80.00
-exec ModifyTransaction 1,3,-10.00
-exec ModifyTransaction 1,3,20.00
-exec ConfirmPayment 1
-select * from AppUsers
---select * from Messages
---select * from TransactionTable
---select * from MessageWinners
-*/
+select * from AppConnections
+
+
+
 -- next lot
 go
