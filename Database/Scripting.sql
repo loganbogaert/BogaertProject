@@ -32,6 +32,7 @@ Amount money not null default 0,
 AvailableAmount money not null default 0, 
 IdAppUserConnection int null foreign key references AppConnections(Id), 
 IdFaceBookUserConnection int null foreign key references FaceBookConnections(Id),
+Validated bit default 0,
 check(Amount >=0 and AvailableAmount >=0),
 check(Amount >= AvailableAmount)
 )
@@ -79,8 +80,45 @@ Id int not null primary key identity,
 Language varchar(2) not null, 
 Text text not null
 )
+-------------<table for profits>-------------
+create table Profits
+(
+ItemId int not null primary key foreign key references Items(Id),
+Percentage varchar(3) not null, 
+check(RIGHT(Percentage,1) = '%')
+)
 -- next lot 
 go 
+-------------------------------<function to calculate profit based on a percentage>-------------------------------
+create or alter function CalculateProfit(@itemId int, @percentage varchar(3)) returns money as 
+-- begin function 
+begin
+-- check if item does not exists
+if not exists (select * from Items where Id = @itemId) return 0.00 
+-- else 
+else
+    -- begin else  
+    begin 
+	-- get raffle price 
+	declare @price money = (select RafflePrice from Items where Id = @itemId)
+	-- create int 
+	declare @percentageInt int
+	-- if length == 3
+	if len(@percentage) = 3  set @percentageInt = convert(int,substring(@percentage,1,2))
+	-- if length == 2 
+	if len(@percentage) = 2  set @percentageInt = convert(int,substring(@percentage,1,1))
+	-- if length == 1
+	if len(@percentage) = 1 return 0.00
+	-- return profit
+	return convert(money,round((@price / 100) * @percentageInt ,2))
+	-- end else 
+	end  
+-- return 0.00 if error
+return 0.00 
+-- end function
+end 
+-- next lot 
+go  
 -------------------------------<View to get number of text per language>------------------
 create view TextPerLanguage as select Language, Text, ROW_NUMBER() over( partition by Language Order by Language) as LanguageNumber from Texts 
 -- next lot 
@@ -97,6 +135,10 @@ go
 create view MessageWinners as select W.Id, W.ItemId, W.Winner,I.Raffler from WinnerTable W join Items I on W.ItemId = I.Id
 -- next lot
 go
+-------------------------------<View to get profit in money value>-------------------------------
+create view profitsInMoneyValue as select p.ItemId, p.Percentage, dbo.CalculateProfit(p.ItemId,p.Percentage) as profit from Profits p
+-- next lot
+go
 -------------------------------<procedure to send money after item has been won>-------------------------------
 -- return -1 == item does not exists
 create or alter procedure ConfirmPayment(@itemId int) as 
@@ -110,6 +152,7 @@ declare @totalSum  money = (select sum(Amount) from TransactionTable where ItemI
 declare @totalItem money = (select RafflePrice from Items where Id = @itemId)
 -- check if total equals amount of item
 if @totalItem = @totalSum 
+
 -- begin if
 begin
            -- begin try block
@@ -141,6 +184,14 @@ begin
 		   -------------------<To be continued>-------------------
 		   -- get raffler 
 		   declare @raffler int = (select Raffler from Items where Id = @itemId)
+		   -- get profit 
+		   declare @profit money
+		   -- percentage 
+		   declare @percentage varchar(3) =  '10%'
+		   -- get profit 
+		   exec @profit = dbo.CalculateProfit @itemId, @percentage
+		   -- insert into profit if not exists 
+	       if not exists (select * from Profits where ItemId = @itemId) insert into Profits values (@itemId,@percentage)
 		   -- update saldo amount 
 		   update Users set Amount = Amount + @totalSum, AvailableAmount = AvailableAmount + @totalSum where Id = @raffler
 		   -- commit sql 
@@ -149,6 +200,8 @@ begin
 	       end try 
 		   -- rollback
 		   begin catch rollback  raiserror('Error while throwing money away from userAccounts, very weird error !',16,1)   end catch
+		   -- erase profit
+		   update Users set Amount = Amount - @profit, AvailableAmount = AvailableAmount - @profit where Id = @raffler
 -- end if 
 end 
 -- raise weird error
@@ -190,7 +243,7 @@ begin
     -- insert into facebook users
     insert into FaceBookConnections values (@FacebookId, @AccessToken)
 	-- then create user 
-	insert into Users values (0,0,null,SCOPE_IDENTITY())
+	insert into Users values (0,0,null,SCOPE_IDENTITY(), 0)
 	-- return good signal
 	return 0
 -- end else 
@@ -259,7 +312,7 @@ end
 -- next lot 
 go 
 ----------------------<procedure used in trigger to check if amount is correct>----------------------
-create or alter procedure CheckAmount(@id int,@itemId int,@currentAmount money,@newAmount  money,@rafflePrice money,@Donor money, @uAmount money = 0) as 
+create or alter procedure CheckAmount(@id int,@itemId int,@currentAmount money,@newAmount  money,@rafflePrice money,@Donor int, @uAmount money = 0) as 
 -- begin procedure
 begin
 	-- create updated amount 
@@ -461,7 +514,7 @@ begin
 	-- insert into table 
 	insert into AppConnections values (@name, @email, @password, @accessToken)
 	-- then create user 
-	insert into Users values (0,0,SCOPE_IDENTITY(),null)
+	insert into Users values (0,0,SCOPE_IDENTITY(),null,0)
 	-- get next entry 
     fetch next from db_cursor into @id
 ---- end while 
@@ -471,11 +524,22 @@ end
 -- next lot
 go
 -----------------------<Test values>-----------------------
-exec AddUser 'AERZO', 'a', 'Log an', 'bogaertlogan@gmail.com', 'test123', null 
+exec AddUser 'AERZOT', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
+exec AddUser 'AERZO', 'a', 'Jarno', 'bogaertjarno@gmail.com', 'test123', null 
 
-insert into Texts values ('NL', 'lol'), ('FR','lel'), ('FR','bonjour'), ('NL','hallo')
+update Users set Amount = 500, AvailableAmount = 500 where Id = 2
 
-select * from AppConnections
+insert into Items values ('Ipad', 'last ipad', 1, 500, 0)
+
+insert into TransactionTable values (1,2,500)
+
+exec ConfirmPayment 1
+
+--select * from TransactionTable
+
+select * from Users
+
+--select * from profitsInMoneyValue
 
 
 
