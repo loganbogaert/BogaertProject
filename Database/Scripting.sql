@@ -13,8 +13,8 @@ create table AppConnections
 (
 Id int not null primary key identity,
 Name varchar(50) not null, 
-Email varchar(80) not null unique, 
-Password varchar(50) not null,
+Email varchar(100) not null unique, 
+Password varchar(300) not null,
 AccessToken varchar(300) not null unique,
 )
 ---------------<Create app FaceBook table>----------------------
@@ -215,7 +215,8 @@ go
 -- return -1 == not a correct UserType 
 -- return -2 == user chose for app user and didn't give username, password, email
 -- return -4 == facebookId is null and shouldn't be null
-create or alter procedure AddUser(@AccessToken varchar(max), @UserType char, @Username varchar(50) = null, @Email varchar(80) = null, @Password varchar(50) = null, @FacebookId varchar(max) = null) as
+-- return -5 == User already exists 
+create or alter procedure AddUser(@AccessToken varchar(300), @UserType char, @Username varchar(50) = null, @Email varchar(100) = null, @Password varchar(300) = null, @FacebookId varchar(300) = null) as
 -- begin procedure 
 begin
 -- check for UserType 
@@ -224,6 +225,8 @@ if @UserType != 'f' and @UserType != 'a' return -1
 if @UserType = 'a' 
 -- begin if
 begin 
+     -- check if user already exists 
+     if exists (select * from AppConnections where Email = @Email)  return -5
      -- check if credentials are correct 
      if @Username is null or @Email is null or @Password is null return -2 
 	 -- if not insert into appUsers 
@@ -524,7 +527,7 @@ end
 -- next lot
 go
 -----------------------<Test values>-----------------------
-exec AddUser 'AERZOT', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
+/*exec AddUser 'AERZOT', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
 exec AddUser 'AERZO', 'a', 'Jarno', 'bogaertjarno@gmail.com', 'test123', null 
 
 update Users set Amount = 500, AvailableAmount = 500 where Id = 2
@@ -539,7 +542,7 @@ exec ConfirmPayment 1
 
 select * from Users
 
---select * from profitsInMoneyValue
+--select * from profitsInMoneyValue*/
 
 
 
