@@ -45,6 +45,7 @@ Description text not null,
 Raffler int foreign key references Users(Id) not null,
 RafflePrice money not null,
 CurrentAmount money default 0,
+Terminated bit default 0,
 check(RafflePrice > 0 and CurrentAmount >= 0)
 )
 ---------------<Create transaction table>--------------------------
@@ -52,10 +53,12 @@ create table TransactionTable
 (
 Id int not null primary key identity, 
 ItemId int not null foreign key references Items(Id),
-Donor int not null foreign key references Users(Id),
+Donor  int null foreign key references Users(Id),
 Amount money not null,
-unique(ItemId,Donor), 
-check(Amount > 0)
+Canceled char default null,
+unique(Id,ItemId,Donor, Canceled), 
+check(Amount > 0),
+check (Canceled is null or Canceled = 'r' or Canceled = 'd')
 )
 ---------------<Create Winner table>--------------------------
 create table WinnerTable
@@ -262,10 +265,12 @@ create or alter procedure ChoseRandomWinner(@itemId int,@rafflePrice float) as
 begin
 -- check if item exists 
 if not exists (select * from Items where Id = @itemId) return -1
+-- change status of terminated 
+update Items set Terminated = 1 where Id = @itemId
 -- create table var 
 declare @myTable TABLE (id int, Amount money)
 -- populate our table var 
-insert into @myTable select Donor, Amount from TransactionTable where ItemId = @itemId
+insert into @myTable select Donor, Amount from TransactionTable where ItemId = @itemId and Donor is not null and Canceled is null
 ---- create id Int 
 declare @id int 
 -- declare money var 
@@ -309,7 +314,7 @@ begin
 -- check if exists 
 if exists (select * from TransactionTable where ItemId = @itemId and Donor = @userId) begin update TransactionTable set Amount = Amount + @amount where ItemId = @itemId and Donor = @userId return 1 end
 -- if not 
-insert into TransactionTable values (@itemId,@userId,@amount) return 2 
+insert into TransactionTable values (@itemId,@userId,@amount, null) return 2 
 -- end procedure 
 end 
 -- next lot 
@@ -325,17 +330,17 @@ begin
 	-- special update
 	else begin set @updatedAmount = @uAmount + @currentAmount update Users set AvailableAmount = AvailableAmount - @uAmount where Id = @Donor  end 
 	-- check if we can update the current amount 
-	if @updatedAmount <= @rafflePrice update Items set CurrentAmount = @updatedAmount where Id = @itemId 
+	if @updatedAmount <= @rafflePrice begin update Items set CurrentAmount = @updatedAmount where Id = @itemId end 
 	-- if we can't, raise error and delete transaction record
 	else 
 	-- begin else 
 	begin 
 	-- delete from transaction table 
-	delete from TransactionTable where Id = @id raiserror('CurrentAmount cannot be bigger than RafflePrice',16,1) 
+	delete from TransactionTable where Id = @id raiserror('UpdatedAmount cannot be bigger than RafflePrice',16,1) 
 	-- begin end 
 	end 
 	-- check if we need to call a procecure to get random winner 
-	if @updatedAmount = @rafflePrice exec dbo.ChoseRandomWinner @itemId,@rafflePrice
+	if @updatedAmount = @rafflePrice begin exec dbo.ChoseRandomWinner @itemId,@rafflePrice  end 
 -- end procedure 
 end 
 -- next lot
@@ -466,22 +471,31 @@ fetch next from db_cursor into @id
 while @@FETCH_STATUS = 0  
 ---- begin while 
 begin 
-    -- get itemiD 
-	declare @itemId int = (select ItemId from inserted where Id = @id)
-    -- get current amount of product
-    declare @currentAmount money = (select CurrentAmount from Items where Id = @itemId)
-	-- get raffleprice of product
-	declare @rafflePrice money = (select RafflePrice from Items where Id = @itemId)
-    -- old amount 
-	declare @oldAmount money = (select Amount from deleted where Id = @id)
-	-- create new amount 
-	declare @newAmount  money = (select Amount from inserted where Id = @id)
-	-- calculate updated amount
-	declare @calculation money = @newAmount - @oldAmount
-	-- get donor 
-	declare @Donor money = (select Donor from inserted where Id = @id)
-	-- use procedure 
-	exec CheckAmount @id, @itemId, @currentAmount,@newAmount,@rafflePrice,@Donor, @calculation
+    -- get donor 
+	declare @Donor int = (select Donor from inserted where Id = @id)
+	-- get Canceled
+	declare @Canceled char = (select Canceled from inserted where Id = @id)
+	print @Canceled
+    -- only if donor is not null 
+	if @donor is not null and @Canceled != 'r'
+	-- begin if
+	begin 
+	    -- get itemiD 
+	    declare @itemId int = (select ItemId from inserted where Id = @id)
+		-- get current amount of product
+		declare @currentAmount money = (select CurrentAmount from Items where Id = @itemId)
+		-- get raffleprice of product
+		declare @rafflePrice money = (select RafflePrice from Items where Id = @itemId)
+		-- old amount 
+		declare @oldAmount money = (select Amount from deleted where Id = @id)
+		-- create new amount 
+		declare @newAmount  money = (select Amount from inserted where Id = @id)
+		-- calculate updated amount
+		declare @calculation money = @newAmount - @oldAmount
+		-- use procedure 
+		exec CheckAmount @id, @itemId, @currentAmount,@newAmount,@rafflePrice,@Donor, @calculation
+	-- end if
+	end 
 	-- get next entry 
     fetch next from db_cursor into @id 
 ---- end while 
@@ -526,25 +540,146 @@ end
 end 
 -- next lot
 go
+---------------<trigger before deleting user>----------------------------
+create or alter trigger deleteUser on Users instead of delete as 
+-- begin trigger
+begin
+---- create id Int 
+declare @id int 
+---- create cursors 
+declare db_cursor cursor local for select Id from deleted
+---- open cursor 
+open db_cursor  
+---- get first entry 
+fetch next from db_cursor into @id  
+---- loop trough cursor 
+while @@FETCH_STATUS = 0  
+---- begin while 
+begin  
+    -- loop trough items 
+	while 1=1
+	-- begin while  
+	begin
+	    -- stop loop if does not exists
+	    if not exists (select top 1 ItemId from TransactionTable where Donor = @id) break
+		-- if exists 
+		else 
+		-- begin else
+		begin 
+		     -- declare itemId
+		     declare @itemId int = (select top 1 ItemId from TransactionTable where Donor = @id)
+			 -- delete from row if not terminated
+			 if exists (select * from Items where Id = @itemId and Terminated = 0) delete from TransactionTable where Donor = @id and ItemId = @itemId
+			 -- check if terminated 
+			 if exists (select * from Items where Id = @itemId and Terminated = 1) 
+			 -- begin if
+			 begin
+			      -- delete if not exits 
+			      if not exists (select * from WinnerTable where Winner = @id and ItemId = @itemId) 
+				  -- begin if
+				  begin 
+				        -- get amount
+				        declare @amount money = (select Amount from TransactionTable where Donor = @id)
+						-- update items
+						update Items set CurrentAmount = CurrentAmount - @amount, Terminated = 0 where Id = @itemId
+						-- update transaction table
+				        update TransactionTable set Donor = null where Donor = @id
+				  -- else if
+				  end
+				  -- else 
+				  else
+				     -- begin else
+				     begin 
+					      -- update canceled
+					      update TransactionTable set Donor = null, Canceled = 'r' where Donor = @id
+						  -- update items
+						  update Items set CurrentAmount = 0 , Terminated = 0 where Id = @itemId
+						  -- endless loop
+						  while 1=1 
+						  -- begin while
+						  begin
+						       -- break loop if needed
+						       if not exists (select top 1 * from TransactionTable where ItemId = @itemId and Canceled is null) break  
+							   -- get transaction Id
+							   declare @tId int = (select top 1 Id from TransactionTable where ItemId = @itemId and Canceled is null) 
+							   -- get transaction amount 
+							   declare @amountT money = (select Amount from TransactionTable where Id = @tId)
+							    -- get transaction amount 
+							   declare @donorT money = (select Donor from TransactionTable where Id = @tId)
+							   -- send money back to User 
+							   update Users set AvailableAmount = AvailableAmount + @amountT where Id = @donorT 
+							   -- cancel transaction
+							   update TransactionTable set Canceled = 'r' where Id = @tId
+							   -- delete from WinnerTable 
+							   delete from WinnerTable where Winner = @id
+						  -- end while 
+						  end
+					 -- end else   
+				     end
+			 -- end if 
+			 end
+		-- end else 
+		end 
+	-- end while
+	end
+    -- get next entry
+    fetch next from db_cursor into @id
+---- end while 
+end 
+---- end while 
+end 
+-- next lot
+go
 -----------------------<Test values>-----------------------
-/*exec AddUser 'AERZOT', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
+exec AddUser 'AERZOT', 'a', 'Logan', 'bogaertlogan@gmail.com', 'test123', null 
 exec AddUser 'AERZO', 'a', 'Jarno', 'bogaertjarno@gmail.com', 'test123', null 
+exec AddUser 'AERZOJ', 'a', 'Jeremy', 'bogaertjeremy@gmail.com', 'test123', null 
 
-update Users set Amount = 500, AvailableAmount = 500 where Id = 2
 
-insert into Items values ('Ipad', 'last ipad', 1, 500, 0)
+update Users set Amount = 500, AvailableAmount = 500 where Id = 2 or Id = 3
 
-insert into TransactionTable values (1,2,500)
+insert into Items values ('Ipad', 'last ipad', 1, 500, 0,0)
 
-exec ConfirmPayment 1
+insert into TransactionTable values (1,2,499, null)
 
---select * from TransactionTable
+insert into TransactionTable values (1,3,1, null)
+
+
+
+delete from Users where Id = 2
 
 select * from Users
 
---select * from profitsInMoneyValue*/
+select * from TransactionTable
+
+select * from Items
+
+insert into TransactionTable values (1,3,500, null)
+
+select * from WinnerTable
 
 
 
+
+
+/*insert into TransactionTable values (1,3,1)
+
+select * from WinnerTable
+
+--delete from Users where Id = 2
+
+select * from TransactionTable
+*/
+
+/*exec ConfirmPayment 1
+
+--select * from TransactionTable
+
+/*select * from Users
+
+*/
+select * from Items
+select * from AppUsers
+*/
 -- next lot
 go
