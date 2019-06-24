@@ -42,10 +42,11 @@ create table Items
 Id int not null primary key identity, 
 Name varchar(50) not null, 
 Description text not null,
-Raffler int foreign key references Users(Id) not null,
+Raffler int foreign key references Users(Id) null,
 RafflePrice money not null,
 CurrentAmount money default 0,
 Terminated bit default 0,
+Deleted bit default 0,
 check(RafflePrice > 0 and CurrentAmount >= 0)
 )
 ---------------<Create transaction table>--------------------------
@@ -55,17 +56,18 @@ Id int not null primary key identity,
 ItemId int not null foreign key references Items(Id),
 Donor  int null foreign key references Users(Id),
 Amount money not null,
-Canceled char default null,
-unique(Id,ItemId,Donor, Canceled), 
+Status char default null,
+unique(Id,ItemId,Donor, Status), 
 check(Amount > 0),
-check (Canceled is null or Canceled = 'r' or Canceled = 'd')
+check (Status is null or Status = 'r' or Status = 'd' or Status = 'w')
 )
 ---------------<Create Winner table>--------------------------
 create table WinnerTable
 (
 Id int not null primary key identity, 
 ItemId int not null foreign key references Items(Id),
-Winner int not null foreign key references Users(Id),
+Winner int null foreign key references Users(Id),
+Confirmed bit default 0,
 unique(ItemId)
 )
 ---------------<Create Messages table>--------------------------
@@ -120,6 +122,10 @@ else
 return 0.00 
 -- end function
 end 
+-- next lot 
+go 
+-------------------------------<View to get TransactionTable With Raffler>------------------
+create view TransactionTableWithRaffler as select T.Id, I.Raffler,T.Donor,T.ItemId, T.Amount, T.Status  from TransactionTable T join Items I on T.ItemId = I.Id 
 -- next lot 
 go  
 -------------------------------<View to get number of text per language>------------------
@@ -205,6 +211,10 @@ begin
 		   begin catch rollback  raiserror('Error while throwing money away from userAccounts, very weird error !',16,1)   end catch
 		   -- erase profit
 		   update Users set Amount = Amount - @profit, AvailableAmount = AvailableAmount - @profit where Id = @raffler
+		   -- update winner table 
+		   update WinnerTable set Confirmed = 1 where ItemId = @itemId
+		   -- update 
+		   update TransactionTable set Status = 'w' where ItemId = @itemId
 -- end if 
 end 
 -- raise weird error
@@ -270,7 +280,7 @@ update Items set Terminated = 1 where Id = @itemId
 -- create table var 
 declare @myTable TABLE (id int, Amount money)
 -- populate our table var 
-insert into @myTable select Donor, Amount from TransactionTable where ItemId = @itemId and Donor is not null and Canceled is null
+insert into @myTable select Donor, Amount from TransactionTable where ItemId = @itemId and Donor is not null and Status is null
 ---- create id Int 
 declare @id int 
 -- declare money var 
@@ -292,7 +302,7 @@ begin
 		-- update max value 
 		set @maxValue = @minValue + @maxValue
 		-- check if he's a winner or not 
-		if @random >= @minValue and @random < @maxValue insert into WinnerTable values (@itemId,@id)
+		if @random >= @minValue and @random < @maxValue insert into WinnerTable values (@itemId,@id, 0)
 		-- update value in table var 
 		update @myTable set Amount = @maxValue where id = @id
 		-- update min value 
@@ -474,10 +484,9 @@ begin
     -- get donor 
 	declare @Donor int = (select Donor from inserted where Id = @id)
 	-- get Canceled
-	declare @Canceled char = (select Canceled from inserted where Id = @id)
-	print @Canceled
+	declare @Status char = (select Status from inserted where Id = @id)
     -- only if donor is not null 
-	if @donor is not null and @Canceled != 'r'
+	if @donor is not null and @Status is null
 	-- begin if
 	begin 
 	    -- get itemiD 
@@ -569,7 +578,15 @@ begin
 		     -- declare itemId
 		     declare @itemId int = (select top 1 ItemId from TransactionTable where Donor = @id)
 			 -- delete from row if not terminated
-			 if exists (select * from Items where Id = @itemId and Terminated = 0) delete from TransactionTable where Donor = @id and ItemId = @itemId
+			 if exists (select * from Items where Id = @itemId and Terminated = 0) 
+			 -- begin if
+			 begin 
+			       -- delete if needed
+			       if exists (select * from TransactionTable where Donor = @id and ItemId = @itemId and Status is null) delete from TransactionTable where Donor = @id and ItemId = @itemId
+				   -- if not update
+				   else update TransactionTable set Donor = null where Donor = @id and ItemId = @itemId
+			 -- end if
+			 end
 			 -- check if terminated 
 			 if exists (select * from Items where Id = @itemId and Terminated = 1) 
 			 -- begin if
@@ -590,30 +607,38 @@ begin
 				  else
 				     -- begin else
 				     begin 
-					      -- update canceled
-					      update TransactionTable set Donor = null, Canceled = 'r' where Donor = @id
-						  -- update items
-						  update Items set CurrentAmount = 0 , Terminated = 0 where Id = @itemId
-						  -- endless loop
-						  while 1=1 
-						  -- begin while
-						  begin
-						       -- break loop if needed
-						       if not exists (select top 1 * from TransactionTable where ItemId = @itemId and Canceled is null) break  
-							   -- get transaction Id
-							   declare @tId int = (select top 1 Id from TransactionTable where ItemId = @itemId and Canceled is null) 
-							   -- get transaction amount 
-							   declare @amountT money = (select Amount from TransactionTable where Id = @tId)
-							    -- get transaction amount 
-							   declare @donorT money = (select Donor from TransactionTable where Id = @tId)
-							   -- send money back to User 
-							   update Users set AvailableAmount = AvailableAmount + @amountT where Id = @donorT 
-							   -- cancel transaction
-							   update TransactionTable set Canceled = 'r' where Id = @tId
-							   -- delete from WinnerTable 
-							   delete from WinnerTable where Winner = @id
-						  -- end while 
-						  end
+					      -- get bit
+					      declare @confirmed bit = (select Confirmed from WinnerTable where ItemId = @itemId)
+					      -- update status
+					      if @confirmed = 0  update TransactionTable set Donor = null, Status = 'r' where Donor = @id else update TransactionTable set Donor = null where Donor = @id
+						  -- if not confirmed
+						  if @confirmed != 1
+						  -- begin if
+						  begin 
+						  	  -- update items
+						      update Items set CurrentAmount = 0 , Terminated = 0 where Id = @itemId
+						      -- endless loop
+						      while 1=1 
+						      -- begin while
+						      begin
+						            -- break loop if needed
+						            if not exists (select top 1 * from TransactionTable where ItemId = @itemId and Status is null) break  
+							        -- get transaction Id
+							        declare @tId int = (select top 1 Id from TransactionTable where ItemId = @itemId and Status is null) 
+							        -- get transaction amount 
+							        declare @amountT money = (select Amount from TransactionTable where Id = @tId)
+							        -- get transaction amount 
+							        declare @donorT money = (select Donor from TransactionTable where Id = @tId)
+							        -- send money back to User 
+							        update Users set AvailableAmount = AvailableAmount + @amountT where Id = @donorT 
+							        -- cancel transaction
+							        update TransactionTable set Status = 'r' where Id = @tId
+							        -- delete from WinnerTable 
+							        delete from WinnerTable where Winner = @id
+						     -- end while 
+						     end
+						  -- end if
+						  end  	
 					 -- end else   
 				     end
 			 -- end if 
@@ -622,11 +647,91 @@ begin
 		end 
 	-- end while
 	end
+	-- endless loop
+	while 1=1 
+	-- begin while 
+	begin
+	     -- stop loop if not exits
+	     if not exists (select top 1 Id from TransactionTableWithRaffler where Raffler = @id and Status is null) break 
+		 -- get Id
+		 declare @tRId int = (select top 1 Id from TransactionTableWithRaffler where Raffler = @id and Status is null)
+		 -- get Item
+		 declare @itemIdTr int = (select ItemId from TransactionTable where Id = @tRId)
+		 -- update 
+		 update TransactionTable set Status = 'd' where Id = @tRId
+		 -- only send money back if needed
+		 if not exists (select * from WinnerTable where ItemId = @itemIdTr and Confirmed = 1)
+		 -- begin if
+		 begin
+				-- get amount 
+				declare @amountTr money = (select Amount from TransactionTable where Id = @tRId)
+				-- get donor
+				declare @donorTr int = (select Donor from TransactionTable where Id = @tRId)
+				-- update 
+				update Users set AvailableAmount = AvailableAmount + @amountTr where Id = @donorTr
+		 -- end if
+		 end
+	-- end while  
+	end
+	-- delete item 
+	delete from Items where Id = @itemIdTr
+	-- remove user
+	update WinnerTable set Winner = null where Winner = @id
+	-- remove from messages 
+	delete from Messages where Sender = @id or Receiver = @id
+	-- remove raffler
+	update Items set Raffler = null, Deleted = 1 where Raffler = @id
+	-- remove user
+	delete from Users where Id = @id
     -- get next entry
     fetch next from db_cursor into @id
 ---- end while 
 end 
 ---- end while 
+end 
+-- next lot 
+go
+---------------<trigger before deleting user>----------------------------
+create or alter trigger deleteItem on Items instead of delete as 
+-- begin trigger
+begin 
+---- create id Int 
+declare @id int 
+---- create cursors 
+declare db_cursor cursor local for select Id from deleted
+---- open cursor 
+open db_cursor  
+---- get first entry 
+fetch next from db_cursor into @id  
+---- loop trough cursor 
+while @@FETCH_STATUS = 0  
+---- begin while 
+begin
+    -- endless loop
+	while 1=1
+	-- begin while
+	begin 
+	    -- break loop if needed
+	    if not exists (select top 1 Id from TransactionTable where Status is null and ItemId = @id) break
+		-- remove raffler
+		update Items set Raffler = null, Deleted = 1 where Id = @id
+		-- get id of transaction
+		declare @idT int = (select top 1 Id from TransactionTable where Status is null and ItemId = @id)
+		-- get donor
+		declare @donor int = (select Donor from TransactionTable where Id = @idT)
+		-- get amount
+		declare @amount money = (select Amount from TransactionTable where Id = @idT)
+		-- update status
+		update TransactionTable set Status = 'd' where Id = @idT
+		-- send money back
+		update Users set AvailableAmount = AvailableAmount + @amount where Id = @donor
+	-- end while
+	end
+    -- get next entry
+    fetch next from db_cursor into @id  
+---- end while 
+end
+-- end trigger 
 end 
 -- next lot
 go
@@ -638,29 +743,18 @@ exec AddUser 'AERZOJ', 'a', 'Jeremy', 'bogaertjeremy@gmail.com', 'test123', null
 
 update Users set Amount = 500, AvailableAmount = 500 where Id = 2 or Id = 3
 
-insert into Items values ('Ipad', 'last ipad', 1, 500, 0,0)
+insert into Items values ('Ipad', 'last ipad', 1, 500, 0,0,0)
 
 insert into TransactionTable values (1,2,499, null)
 
-insert into TransactionTable values (1,3,1, null)
+--insert into TransactionTable values (1,3,1, null)
 
+delete from Users where Id = 1
 
-
-delete from Users where Id = 2
+select * from TransactionTableWithRaffler
 
 select * from Users
-
-select * from TransactionTable
-
 select * from Items
-
-insert into TransactionTable values (1,3,500, null)
-
-select * from WinnerTable
-
-
-
-
 
 /*insert into TransactionTable values (1,3,1)
 
