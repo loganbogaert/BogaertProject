@@ -13,20 +13,13 @@ const express = require('express');
 const path = require('path');
 // require bcrypt
 const bcrypt = require('bcrypt');
+// require custom made modules
+const mail = require('./modules/mail');
+const validate = require('./modules/validate');
 // DB config
 let config = { user: "TombolaAdmin", password: "LJJ1234", server: "localhost\\SQLEXPRESS", database: "TombolaDB", port: 1433, options: { encrypt: false } };
-
+// creating connection pool
 let pool = new mssql.ConnectionPool(config).connect();
-
-//***********************<Functions>***********************
-function isPropertyValid(object, property) {
-  // get property 
-  let item = object[property];
-  // if unvalid return false 
-  if (item == null || item == "" || item == undefined) return false;
-  // if not return true
-  return true;
-}
 
 //***********************<Worker class>***********************
 class Worker extends SCWorker {
@@ -45,23 +38,36 @@ class Worker extends SCWorker {
         let token = req.query.token;
         
         pool.then(pool => {
-            return pool.query`select Id, Email, AccessToken from AppConnections where AccessToken = ${token}`
+            return pool.query`select Id, Name, Email, AccessToken from AppConnections where AccessToken = ${token}`
         }).then(result => {
             let tok = result.recordset[0].AccessToken;
             let id = result.recordset[0].Id;
             let valid;
+
+            let data = {
+                email: result.recordset[0].Email,
+                name: result.recordset[0].Name
+            }
 
             jwt.verify(tok, secret, (err, decoded) => {
                 if (err) {
                     console.log(err);
                     valid = false;
 
+                    // Make new token
+                    let token = jwt.sign({ 
+                        data: data.email, 
+                        exp: Math.floor(Date.now() / 1000) + 60 * 30
+                    }, secret);
+
                     // Resent new mail with new token
+                    mail.sendMail(data, token);
 
                 } else {
                     console.log(decoded);
                     valid = true;
 
+                    // update validated bit to 1, so the user is verified
                     pool.then(pool => {
                         return pool.query`update Users set Validated=1 where IdAppUserConnection=${id}`
                     }).then(result => {
@@ -96,14 +102,14 @@ class Worker extends SCWorker {
       //*********<event when socket wants to create new user>*********
       socket.on('serverCall', function (data, respond) {
         console.log(data);
-        if (isPropertyValid(data, 'type')) {
+        if (validate.isPropertyValid(data, 'type')) {
           if (data.type == 'newUser') {
             console.log('new user');
             let props = ['name', 'pwd', 'email'];
             // Look if each prop is valid
             for (const prop of props) {
               console.log(prop);
-              let res = isPropertyValid(data, prop);
+              let res = validate.isPropertyValid(data, prop);
               if (res == false) {
                 // Let the client know that not all the right props are given
                 respond('Not the right props');
@@ -124,14 +130,10 @@ class Worker extends SCWorker {
 
             // When all props are valid we continue
             // Generate token based on the user his email
-            let token = jwt.sign(
-                { 
-                    data: data.email, 
-                    exp: Math.floor(Date.now() / 1000) + 60 * 30 
-                }, secret);
-            // Procedure to register user
-            // mssql.connect(config, err => {
-            //   if (err) throw err;
+            let token = jwt.sign({ 
+                data: data.email, 
+                exp: Math.floor(Date.now() / 1000) + 60 * 30 
+            }, secret);
 
               return pool.then((pool) => {
                 pool.request()
@@ -148,32 +150,9 @@ class Worker extends SCWorker {
                   if (result.returnValue == 0) {
                     respond();
                     mssql.close();
-                    // Send mail
-                    let transporter = nodemailer.createTransport({
-                      service: 'gmail',
-                      auth: {
-                        user: 'jarnobog@gmail.com',
-                        pass: '04121999'
-                      }
-                    });
-                    console.log(data.email);
-                    
-                    let toEmail = data.email;
-                    const mailOptions = {
-                      from: 'jarnobog@gmail.com', // sender address
-                      to: toEmail, // list of receivers
-                      subject: 'Confirm', // Subject line
-                      html: `<p>Hello, ${data.name}</p>
-                            <p>Go to http://localhost/verify?token=${token} to verify your account.</p>
-                      `// plain text body
-                    };
 
-                    transporter.sendMail(mailOptions, function (err, info) {
-                      if(err)
-                        console.log(err);
-                      else
-                        console.log(info);
-                   });
+                    // Send mail
+                    mail.sendMail(data, token);
                   } else {
                     respond('Procedure failed');
                   }
@@ -181,9 +160,6 @@ class Worker extends SCWorker {
                 });
                 mssql.close();
               })
-                
-
-            // })
           }
         }
       });
@@ -191,5 +167,3 @@ class Worker extends SCWorker {
   }
 }
 new Worker();
-
-
