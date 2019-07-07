@@ -35,60 +35,60 @@ class Worker extends SCWorker {
     app.set('views', path.join(__dirname, 'views'));
 
     app.get('/verify', (req, res) => {
-        let token = req.query.token;
-        
-        pool.then(pool => {
-            return pool.query`select Id, Name, Email, AccessToken from AppConnections where AccessToken = ${token}`
-        }).then(result => {
-            let tok = result.recordset[0].AccessToken;
-            let id = result.recordset[0].Id;
-            let valid;
+      let token = req.query.token;
 
-            let data = {
-                email: result.recordset[0].Email,
-                name: result.recordset[0].Name
-            }
+      pool.then(pool => {
+        return pool.query`select Id, Name, Email, AccessToken from AppConnections where AccessToken = ${token}`
+      }).then(result => {
+        let tok = result.recordset[0].AccessToken;
+        let id = result.recordset[0].Id;
+        let valid;
 
-            jwt.verify(tok, secret, (err, decoded) => {
-                if (err) {
-                    console.log(err);
-                    valid = false;
+        let data = {
+          email: result.recordset[0].Email,
+          name: result.recordset[0].Name
+        }
 
-                    // Make new token
-                    let token = jwt.sign({ 
-                        data: data.email, 
-                        exp: Math.floor(Date.now() / 1000) + 60 * 30
-                    }, secret);
-
-                    // Resent new mail with new token
-                    mail.sendMail(data, token);
-
-                } else {
-                    console.log(decoded);
-                    valid = true;
-
-                    // update validated bit to 1, so the user is verified
-                    pool.then(pool => {
-                        return pool.query`update Users set Validated=1 where IdAppUserConnection=${id}`
-                    }).then(result => {
-                        console.log(result);
-                        
-                    }).catch(err => {
-                        console.log(err);
-                    })
-                }
-
-                res.render('verify', {
-                    valid: valid
-                })
-
-            })
-            
-        }).catch(err => {
+        jwt.verify(tok, secret, (err, decoded) => {
+          if (err) {
             console.log(err);
+            valid = false;
+
+            // Make new token
+            let token = jwt.sign({
+              data: data.email,
+              exp: Math.floor(Date.now() / 1000) + 60 * 30
+            }, secret);
+
+            // Resent new mail with new token
+            mail.sendMail(data, token);
+
+          } else {
+            console.log(decoded);
+            valid = true;
+
+            // update validated bit to 1, so the user is verified
+            pool.then(pool => {
+              return pool.query`update Users set Validated=1 where IdAppUserConnection=${id}`
+            }).then(result => {
+              console.log(result);
+
+            }).catch(err => {
+              console.log(err);
+            })
+          }
+
+          res.render('verify', {
+            valid: valid
+          })
+
         })
-        
-        
+
+      }).catch(err => {
+        console.log(err);
+      })
+
+
 
     });
 
@@ -120,23 +120,23 @@ class Worker extends SCWorker {
 
             // Hash password
             bcrypt.genSalt(10, (err, salt) => {
+              if (err) throw err;
+              bcrypt.hash(data.pwd, salt, (err, hash) => {
                 if (err) throw err;
-                bcrypt.hash(data.pwd, salt, (err, hash) => {
-                    if (err) throw err;
-                    data.pwd = hash;
-                })
+                data.pwd = hash;
+              })
             });
 
 
             // When all props are valid we continue
             // Generate token based on the user his email
-            let token = jwt.sign({ 
-                data: data.email, 
-                exp: Math.floor(Date.now() / 1000) + 60 * 30 
+            let token = jwt.sign({
+              data: data.email,
+              exp: Math.floor(Date.now() / 1000) + 60 * 30
             }, secret);
 
-              return pool.then((pool) => {
-                pool.request()
+            return pool.then((pool) => {
+              pool.request()
                 .input('AccessToken', mssql.VarChar(300), token)
                 .input('UserType', mssql.Char(), 'a')
                 .input('Username', mssql.VarChar(50), data.name)
@@ -146,7 +146,7 @@ class Worker extends SCWorker {
                 .execute('AddUser', (err, result) => {
                   if (err) throw err;
                   console.log(result);
-                  
+
                   if (result.returnValue == 0) {
                     respond();
                     mssql.close();
@@ -158,11 +158,48 @@ class Worker extends SCWorker {
                   }
                   mssql.close();
                 });
-                mssql.close();
-              })
+              mssql.close();
+            })
           }
         }
       });
+
+      socket.on('login', (data, respond) => {
+        let { email, pwd } = data;
+
+        // Hash password
+        bcrypt.genSalt(10, (err, salt) => {
+          if (err) throw err;
+          bcrypt.hash(pwd, salt, (err, hash) => {
+            if (err) throw err;
+            pwd = hash;
+          });
+        });
+
+        // Search user in app table
+        pool.then(pool => {
+          return pool.query`select Id, Password from AppConnections where Email = ${email}`
+        }).then((result) => {
+          let pwdFromDb = result.recordset[0].Password;
+          let appId = result.recordset[0].Id;
+
+          // Get id from user in user table
+          pool.then(pool => {
+            return pool.query`select Id from Users where IdAppUserConnection = ${appId}`
+          }).then(result => {
+            let userId = result.recordset[0].Id;
+
+            // Compare passwords
+            if (pwdFromDb === pwd) {
+              respond();
+              socket.setAuthToken({id:  userId, email: email});
+            }
+            else {
+              respond('Login has failed');
+            }
+          });
+        });
+      })
     });
   }
 }
